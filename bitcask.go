@@ -27,7 +27,10 @@ func (b *Bitcask) Put(key, value []byte) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	_, err := b.actFile.write(key, value)
-
-	return err
+	entry, err := b.actFile.write(key, value)
+	if err != nil {
+		return err
+	}
+	b.index.put(string(key), entry)
+	return nil
 }

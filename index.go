@@ -13,3 +13,9 @@ func newIndex() *index {
 		RWMutex: &sync.RWMutex{},
 	}
 }
+
+func (i *index) put(key string, entry *entry) {
+	i.Lock()
+	defer i.Unlock()
+	i.entrys[key] = entry
+}
