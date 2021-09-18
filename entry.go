@@ -25,7 +25,7 @@ func encode(key, value []byte, keySize, valueSize, ts, entrySize uint32) ([]byte
 	copy(buf[HeaderSize+keySize:HeaderSize+keySize+valueSize], value)
 
 	c32 := crc32.ChecksumIEEE(buf[4:])
-	binary.LittleEndian.PutUint32(buf[0:4], c32)
+	binary.BigEndian.PutUint32(buf[0:4], c32)
 
 	return buf, nil
 }
