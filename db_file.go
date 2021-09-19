@@ -64,6 +64,17 @@ func (bf *BitFile) openFile(dir string) (*os.File, error) {
 	return fp, nil
 }
 
+func (bf *BitFile) read(offset uint64, length uint32) ([]byte, error) {
+	value := make([]byte, length)
+	bf.fp.Seek(int64(offset), 0)
+	_, err := bf.fp.Read(value)
+	if err != nil {
+		return nil, err
+	}
+	return value, err
+}
+
+
 func (bf *BitFile) newFile(dir string) string {
 	bf.fid++
 	return newFilePath(dir, bf.fid)

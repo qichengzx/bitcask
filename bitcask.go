@@ -34,3 +34,16 @@ func (b *Bitcask) Put(key, value []byte) error {
 	b.index.put(string(key), entry)
 	return nil
 }
+
+func (b *Bitcask) Get(key []byte) ([]byte, error) {
+	entry, err := b.index.get(key)
+	if err != nil {
+		return nil, err
+	}
+
+	value, err := b.actFile.read(entry.valueOffset, entry.valueSize)
+	if err != nil {
+		return nil, err
+	}
+	return value, nil
+}
