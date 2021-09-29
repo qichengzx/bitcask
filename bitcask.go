@@ -47,3 +47,21 @@ func (b *Bitcask) Get(key []byte) ([]byte, error) {
 	}
 	return value, nil
 }
+
+func (b *Bitcask) Del(key []byte) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	_, err := b.index.get(key)
+	if err != nil {
+		return err
+	}
+
+	err = b.actFile.del(key)
+	if err != nil {
+		return err
+	}
+	b.index.del(string(key))
+	return nil
+}
+

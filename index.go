@@ -32,3 +32,9 @@ func (i *index) get(key []byte) (*entry, error) {
 
 	return nil, errors.New("key not found")
 }
+
+func (i *index) del(key string) {
+	i.Lock()
+	defer i.Unlock()
+	delete(i.entrys, key)
+}

@@ -74,6 +74,22 @@ func (bf *BitFile) read(offset uint64, length uint32) ([]byte, error) {
 	return value, err
 }
 
+func (bf *BitFile) del(key []byte) error {
+	ts := uint32(time.Now().Unix())
+	keySize := uint32(len(key))
+	var valueSize uint32 = 0
+	entrySize := getSize(keySize, valueSize)
+	buf, _ := encode(key, nil, keySize, valueSize, ts, entrySize)
+
+	_, err := bf.fp.WriteAt(buf, int64(bf.offset))
+	if err != nil {
+		panic(err)
+	}
+
+	bf.offset += uint64(entrySize)
+
+	return nil
+}
 
 func (bf *BitFile) newFile(dir string) string {
 	bf.fid++
