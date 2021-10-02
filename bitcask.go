@@ -1,12 +1,15 @@
 package bitcask
 
 import (
+	"os"
 	"sync"
 )
 
 type Bitcask struct {
 	index   *index
 	actFile *BitFile
+	dir     string
+	lock    *os.File
 	mu      *sync.RWMutex
 }
 
@@ -16,9 +19,15 @@ func New(dir string) (*Bitcask, error) {
 		return nil, err
 	}
 	idx := newIndex()
+	lockFile, err := lock(dir)
+	if err != nil {
+		return nil, err
+	}
 	return &Bitcask{
 		index:   idx,
 		actFile: bf,
+		dir:     dir,
+		lock:    lockFile,
 		mu:      &sync.RWMutex{},
 	}, nil
 }
@@ -64,4 +73,3 @@ func (b *Bitcask) Del(key []byte) error {
 	b.index.del(string(key))
 	return nil
 }
-

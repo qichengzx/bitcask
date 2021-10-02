@@ -3,6 +3,7 @@ package bitcask
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -98,4 +99,10 @@ func (bf *BitFile) newFile(dir string) string {
 
 func newFilePath(dir string, fid uint32) string {
 	return fmt.Sprintf("%s%s%06d.%s", dir, string(os.PathSeparator), fid, "data")
+}
+
+const lockFileName = "bitcask.lock"
+
+func lock(dir string) (*os.File, error) {
+	return os.OpenFile(filepath.Join(dir, lockFileName), os.O_EXCL|os.O_CREATE|os.O_RDWR, os.ModePerm)
 }
