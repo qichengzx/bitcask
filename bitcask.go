@@ -32,6 +32,12 @@ func New(dir string) (*Bitcask, error) {
 	}, nil
 }
 
+func (b *Bitcask) Close() {
+	b.actFile.fp.Close()
+	b.lock.Close()
+	os.Remove(b.lock.Name())
+}
+
 func (b *Bitcask) Put(key, value []byte) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
