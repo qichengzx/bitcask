@@ -94,11 +94,17 @@ func (bf *BitFile) del(key []byte) error {
 
 func (bf *BitFile) newFile(dir string) string {
 	bf.fid++
-	return newFilePath(dir, bf.fid)
+	fid := bf.newFid()
+
+	return newFilePath(dir, fid)
 }
 
-func newFilePath(dir string, fid uint32) string {
-	return fmt.Sprintf("%s%s%06d.%s", dir, string(os.PathSeparator), fid, "data")
+func (bf *BitFile) newFid() string {
+	return fmt.Sprintf("%06d", bf.fid)
+}
+
+func newFilePath(dir,fid string) string {
+	return fmt.Sprintf("%s%s%s.%s", dir, string(os.PathSeparator), fid, "data")
 }
 
 const lockFileName = "bitcask.lock"
