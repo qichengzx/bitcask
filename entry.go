@@ -14,6 +14,15 @@ type entry struct {
 
 const HeaderSize = 16
 
+func newEntry(fid, valueSize uint32, valueOffset, timestamp uint64) *entry {
+	return &entry{
+		fileID:      fid,
+		valueSize:   valueSize,
+		valueOffset: valueOffset,
+		timestamp:   timestamp,
+	}
+}
+
 func encode(key, value []byte, keySize, valueSize, ts, entrySize uint32) ([]byte, error) {
 	// crc32 | timestamp | keySize | valueSize | key | value
 	// 4	 | 4		 | 4	   | 4         | 4   | 4

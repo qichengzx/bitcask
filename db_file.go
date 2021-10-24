@@ -1,9 +1,13 @@
 package bitcask
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,6 +28,66 @@ func newBitFile(dir string) (*BitFile, error) {
 	return bf, nil
 }
 
+func toBitFile(fid uint32, fp *os.File) (*BitFile, error) {
+	stat, err := fp.Stat()
+	if err != nil {
+		return nil, err
+	}
+
+	bf := &BitFile{
+		fp:     fp,
+		fid:    fid,
+		offset: uint64(stat.Size()),
+	}
+
+	return bf, nil
+}
+
+func (bf *BitFile) populateFilesMap(dir string) (uint32, error) {
+	files, err := readDir(dir)
+	if err != nil {
+		return 0, err
+	}
+
+	found := make(map[uint32]struct{})
+	var maxFid uint32 = 0
+	for _, file := range files {
+		if !strings.HasSuffix(file.Name(), ext) {
+			continue
+		}
+		fid, err := getFid(file.Name())
+		if err != nil {
+			return 0, err
+		}
+		if _, ok := found[fid]; ok {
+			return 0, errors.New("Duplicate file found.")
+		}
+		found[fid] = struct{}{}
+		if maxFid < fid {
+			maxFid = fid
+		}
+	}
+	return maxFid, nil
+}
+
+func getFid(name string) (uint32, error) {
+	fsz := len(name)
+	fid, err := strconv.ParseUint(name[:fsz-5], 10, 32)
+	if err != nil {
+		return 0, errors.New("Unable to parse file id.")
+	}
+
+	return uint32(fid), nil
+}
+
+func readDir(dir string) ([]os.DirEntry, error) {
+	files, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, errors.New("Unable to open dir.")
+	}
+	return files, err
+}
+
 func (bf *BitFile) write(key, value []byte) (*entry, error) {
 	ts := uint32(time.Now().Unix())
 
@@ -36,43 +100,22 @@ func (bf *BitFile) write(key, value []byte) (*entry, error) {
 
 	_, err := bf.fp.WriteAt(buf, int64(bf.offset))
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	bf.offset += uint64(entrySize)
 
-	return &entry{
-		fileID:      bf.fid,
-		valueSize:   valueSize,
-		valueOffset: offset,
-		timestamp:   uint64(ts),
-	}, nil
+	entry := newEntry(bf.fid, valueSize, offset, uint64(ts))
+	return entry, nil
 }
 
-func (bf *BitFile) openFile(dir string) (*os.File, error) {
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-			return nil, err
-		}
-	}
-
-	file := bf.newFile(dir)
-	fp, err := os.OpenFile(file, os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
+func (bf *BitFile) read(offset uint64, size uint32) ([]byte, error) {
+	buf := make([]byte, size)
+	if _, err := bf.fp.ReadAt(buf, int64(offset)); err != nil {
 		return nil, err
 	}
 
-	return fp, nil
-}
-
-func (bf *BitFile) read(offset uint64, length uint32) ([]byte, error) {
-	value := make([]byte, length)
-	bf.fp.Seek(int64(offset), 0)
-	_, err := bf.fp.Read(value)
-	if err != nil {
-		return nil, err
-	}
-	return value, err
+	return buf, nil
 }
 
 func (bf *BitFile) del(key []byte) error {
@@ -92,19 +135,66 @@ func (bf *BitFile) del(key []byte) error {
 	return nil
 }
 
-func (bf *BitFile) newFile(dir string) string {
-	bf.fid++
+func (bf *BitFile) openFile(dir string) (*os.File, error) {
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+			return nil, err
+		}
+	}
+
+	file, err := bf.newFile(dir)
+	if err != nil {
+		return nil, err
+	}
+	fp, err := os.OpenFile(file, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return nil, err
+	}
+
+	return fp, nil
+}
+
+func (bf *BitFile) newFile(dir string) (string, error) {
+	lastFid, err := bf.populateFilesMap(dir)
+	if err != nil {
+		return "", err
+	}
+
+	// create a new file
+	bf.fid = lastFid + 1
 	fid := bf.newFid()
 
-	return newFilePath(dir, fid)
+	dataFilePath := newFilePath(dir, fid)
+	return dataFilePath, nil
 }
 
 func (bf *BitFile) newFid() string {
 	return fmt.Sprintf("%06d", bf.fid)
 }
 
-func newFilePath(dir,fid string) string {
-	return fmt.Sprintf("%s%s%s.%s", dir, string(os.PathSeparator), fid, "data")
+const ext = ".data"
+
+func newFilePath(dir, fid string) string {
+	return fmt.Sprintf("%s%s%s%s", dir, string(os.PathSeparator), fid, ext)
+}
+
+type BitFiles struct {
+	files map[uint32]*BitFile
+	mu    *sync.RWMutex
+}
+
+func newBitFiles() *BitFiles {
+	return &BitFiles{
+		files: make(map[uint32]*BitFile),
+		mu:    &sync.RWMutex{},
+	}
+}
+
+func (bf *BitFiles) add(fid uint32, fp *BitFile) {
+	bf.mu.Lock()
+	defer bf.mu.Unlock()
+
+	bf.files[fid] = fp
 }
 
 const lockFileName = "bitcask.lock"
