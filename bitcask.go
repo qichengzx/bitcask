@@ -31,7 +31,7 @@ func New(dir string) (*Bitcask, error) {
 		return nil, err
 	}
 	option := NewOption(0)
-	return &Bitcask{
+	bitcask := &Bitcask{
 		option:   option,
 		index:    idx,
 		actFile:  bf,
@@ -39,7 +39,9 @@ func New(dir string) (*Bitcask, error) {
 		dir:      dir,
 		lock:     lockFile,
 		mu:       &sync.RWMutex{},
-	}, nil
+	}
+	bitcask.loadIndex()
+	return bitcask, nil
 }
 
 func (b *Bitcask) Close() {
