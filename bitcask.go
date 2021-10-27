@@ -143,7 +143,7 @@ func (b *Bitcask) Del(key []byte) error {
 
 	_, err := b.index.get(key)
 	if err != nil {
-		return err
+		return nil
 	}
 
 	err = b.actFile.del(key)

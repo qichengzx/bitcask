@@ -127,7 +127,7 @@ func (bf *BitFile) del(key []byte) error {
 
 	_, err := bf.fp.WriteAt(buf, int64(bf.offset))
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	bf.offset += uint64(entrySize)
