@@ -111,6 +111,8 @@ func (b *Bitcask) Put(key, value []byte) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	b.checkFile()
+
 	entry, err := b.actFile.write(key, value)
 	if err != nil {
 		return err
@@ -146,6 +148,8 @@ func (b *Bitcask) Del(key []byte) error {
 		return nil
 	}
 
+	b.checkFile()
+
 	err = b.actFile.del(key)
 	if err != nil {
 		return err
@@ -164,4 +168,20 @@ func (b *Bitcask) checkFileState(fid uint32) (*BitFile, error) {
 	}
 
 	return nil, errors.New("fid not exist")
+}
+
+func (b *Bitcask) checkFile() error {
+	if b.actFile.offset > b.option.MaxFileSize {
+		b.actFile.fp.Close()
+		b.oldFiles.add(b.actFile.fid, b.actFile)
+
+		bf, err := newBitFile(b.dir)
+		if err != nil {
+			return err
+		}
+
+		b.actFile = bf
+	}
+
+	return nil
 }
