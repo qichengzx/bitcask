@@ -93,10 +93,6 @@ func (b *Bitcask) loadIndex() {
 				//key is deleted
 				continue
 			}
-			valByte := make([]byte, valueSize)
-			if _, err := fp.ReadAt(valByte, int64(HeaderSize+keySize)); err != nil {
-
-			}
 
 			timestamp := uint64(binary.BigEndian.Uint32(buf[4:8]))
 
