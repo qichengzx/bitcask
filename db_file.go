@@ -44,7 +44,7 @@ func toBitFile(fid uint32, fp *os.File) (*BitFile, error) {
 }
 
 func (bf *BitFile) populateFilesMap(dir string) (uint32, error) {
-	files, err := readDir(dir)
+	files, err := scanOldFiles(dir)
 	if err != nil {
 		return 0, err
 	}
@@ -52,9 +52,6 @@ func (bf *BitFile) populateFilesMap(dir string) (uint32, error) {
 	found := make(map[uint32]struct{})
 	var maxFid uint32 = 0
 	for _, file := range files {
-		if !strings.HasSuffix(file.Name(), ext) {
-			continue
-		}
 		fid, err := getFid(file.Name())
 		if err != nil {
 			return 0, err
@@ -80,12 +77,19 @@ func getFid(name string) (uint32, error) {
 	return uint32(fid), nil
 }
 
-func readDir(dir string) ([]os.DirEntry, error) {
+func scanOldFiles(dir string) ([]os.DirEntry, error) {
 	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, errors.New("Unable to open dir.")
 	}
-	return files, err
+	var entry []os.DirEntry
+	for _, file := range files {
+		if !strings.HasSuffix(file.Name(), ext) {
+			continue
+		}
+		entry = append(entry, file)
+	}
+	return entry, err
 }
 
 func (bf *BitFile) write(key, value []byte) (*entry, error) {

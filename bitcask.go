@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 )
 
@@ -51,7 +50,7 @@ func (b *Bitcask) Close() {
 }
 
 func (b *Bitcask) loadIndex() {
-	files, err := readDir(b.dir)
+	files, err := scanOldFiles(b.dir)
 	if err != nil {
 		panic(err)
 	}
@@ -59,9 +58,6 @@ func (b *Bitcask) loadIndex() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for _, file := range files {
-		if !strings.HasSuffix(file.Name(), ext) {
-			continue
-		}
 		fid, _ := getFid(file.Name())
 		var offset int64 = 0
 		fp, err := os.Open(filepath.Join(b.dir, file.Name()))
