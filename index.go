@@ -6,13 +6,17 @@ import (
 )
 
 type index struct {
-	entrys map[string]*entry
+	entries map[string]*entry
 	*sync.RWMutex
 }
 
+var (
+	ErrKeyNotFound = errors.New("Key not found")
+)
+
 func newIndex() *index {
 	return &index{
-		entrys:  make(map[string]*entry),
+		entries: make(map[string]*entry),
 		RWMutex: &sync.RWMutex{},
 	}
 }
@@ -20,21 +24,21 @@ func newIndex() *index {
 func (i *index) put(key string, entry *entry) {
 	i.Lock()
 	defer i.Unlock()
-	i.entrys[key] = entry
+	i.entries[key] = entry
 }
 
 func (i *index) get(key []byte) (*entry, error) {
 	i.Lock()
 	defer i.Unlock()
-	if entry, ok := i.entrys[string(key)]; ok {
+	if entry, ok := i.entries[string(key)]; ok {
 		return entry, nil
 	}
 
-	return nil, errors.New("key not found")
+	return nil, ErrKeyNotFound
 }
 
 func (i *index) del(key string) {
 	i.Lock()
 	defer i.Unlock()
-	delete(i.entrys, key)
+	delete(i.entries, key)
 }

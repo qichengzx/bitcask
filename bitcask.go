@@ -12,10 +12,9 @@ import (
 type Bitcask struct {
 	option   Option
 	index    *index
-	actFile  *BitFile
-	oldFiles *BitFiles
-	dir      string
 	lock     *os.File
+	oldFiles *BitFiles
+	actFile  *BitFile
 	mu       *sync.RWMutex
 }
 
@@ -24,19 +23,19 @@ func New(dir string) (*Bitcask, error) {
 	if err != nil {
 		return nil, err
 	}
-	idx := newIndex()
 	lockFile, err := lock(dir)
 	if err != nil {
 		return nil, err
 	}
-	option := NewOption(0)
+
+	options := NewOption(dir, 0)
+
 	bitcask := &Bitcask{
-		option:   option,
-		index:    idx,
-		actFile:  bf,
-		oldFiles: newBitFiles(),
-		dir:      dir,
+		option:   options,
+		index:    newIndex(),
 		lock:     lockFile,
+		oldFiles: newBitFiles(),
+		actFile:  bf,
 		mu:       &sync.RWMutex{},
 	}
 	bitcask.loadIndex()
@@ -50,7 +49,7 @@ func (b *Bitcask) Close() {
 }
 
 func (b *Bitcask) loadIndex() {
-	files, err := scanOldFiles(b.dir)
+	files, err := scanOldFiles(b.option.Dir)
 	if err != nil {
 		panic(err)
 	}
@@ -59,16 +58,13 @@ func (b *Bitcask) loadIndex() {
 	defer b.mu.Unlock()
 	for _, file := range files {
 		fid, _ := getFid(file.Name())
-		var offset int64 = 0
-		fp, err := os.Open(filepath.Join(b.dir, file.Name()))
-		if err != nil {
-			continue
-		}
+		fp, err := os.Open(filepath.Join(b.option.Dir, file.Name()))
 
 		bitFile, err := toBitFile(fid, fp)
 		if err != nil {
 			continue
 		}
+		var offset int64 = 0
 		b.oldFiles.add(fid, bitFile)
 		for {
 			buf := make([]byte, HeaderSize)
@@ -80,12 +76,15 @@ func (b *Bitcask) loadIndex() {
 			keySize := binary.BigEndian.Uint32(buf[8:12])
 			valueSize := binary.BigEndian.Uint32(buf[12:HeaderSize])
 
+			readOffset := offset + HeaderSize
+			valueOffset := uint64(readOffset) + uint64(keySize)
 			offset += int64(getSize(keySize, valueSize))
 			keyByte := make([]byte, keySize)
-			if _, err := fp.ReadAt(keyByte, int64(HeaderSize)); err != nil {
+			if _, err := fp.ReadAt(keyByte, readOffset); err != nil {
 				continue
 			}
 			if valueSize == 0 {
+				b.index.del(string(keyByte))
 				//key is deleted
 				continue
 			}
@@ -93,7 +92,7 @@ func (b *Bitcask) loadIndex() {
 			timestamp := uint64(binary.BigEndian.Uint32(buf[4:8]))
 
 			//load to map
-			entry := newEntry(fid, valueSize, uint64(HeaderSize+int64(keySize)), timestamp)
+			entry := newEntry(fid, valueSize, valueOffset, timestamp)
 			b.index.put(string(keyByte), entry)
 		}
 	}
@@ -167,7 +166,7 @@ func (b *Bitcask) checkFile() error {
 		b.actFile.fp.Close()
 		b.oldFiles.add(b.actFile.fid, b.actFile)
 
-		bf, err := newBitFile(b.dir)
+		bf, err := newBitFile(b.option.Dir)
 		if err != nil {
 			return err
 		}
