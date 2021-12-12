@@ -1,8 +1,10 @@
 package bitcask
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -114,11 +116,14 @@ func (bf *BitFile) write(key, value []byte) (*entry, error) {
 }
 
 func (bf *BitFile) read(offset uint64, size uint32) ([]byte, error) {
+	return read(bf.fp, int64(offset), size)
+}
+
+func read(fp *os.File, offset int64, size uint32) ([]byte, error) {
 	buf := make([]byte, size)
-	if _, err := bf.fp.ReadAt(buf, int64(offset)); err != nil {
+	if _, err := fp.ReadAt(buf, offset); err != nil {
 		return nil, err
 	}
-
 	return buf, nil
 }
 
@@ -205,4 +210,21 @@ const lockFileName = "bitcask.lock"
 
 func lock(dir string) (*os.File, error) {
 	return os.OpenFile(filepath.Join(dir, lockFileName), os.O_EXCL|os.O_CREATE|os.O_RDWR, os.ModePerm)
+}
+
+func newEntryFromBuf(fp *os.File, fid uint32, offset int64) (*entry, uint32, uint32) {
+	buf, err := read(fp, offset, HeaderSize)
+	if err != nil {
+		if err == io.EOF {
+			return nil, 0, 0
+		}
+	}
+	ts := binary.BigEndian.Uint32(buf[4:8])
+	keySize := binary.BigEndian.Uint32(buf[8:12])
+	valueSize := binary.BigEndian.Uint32(buf[12:HeaderSize])
+
+	entrySize := getSize(keySize, valueSize)
+
+	entry := newEntry(fid, valueSize, uint64(offset)+uint64(HeaderSize+keySize), uint64(ts))
+	return entry, keySize, entrySize
 }

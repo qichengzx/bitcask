@@ -1,9 +1,7 @@
 package bitcask
 
 import (
-	"encoding/binary"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
 	"sync"
@@ -67,32 +65,25 @@ func (b *Bitcask) loadIndex() {
 		var offset int64 = 0
 		b.oldFiles.add(fid, bitFile)
 		for {
-			buf := make([]byte, HeaderSize)
-			if _, err := fp.ReadAt(buf, offset); err != nil {
-				if err == io.EOF {
-					break
-				}
+			entry, keySize, entrySize := newEntryFromBuf(fp, fid, offset)
+			if entry == nil {
+				break
 			}
-			keySize := binary.BigEndian.Uint32(buf[8:12])
-			valueSize := binary.BigEndian.Uint32(buf[12:HeaderSize])
 
 			readOffset := offset + HeaderSize
-			valueOffset := uint64(readOffset) + uint64(keySize)
-			offset += int64(getSize(keySize, valueSize))
+			offset += int64(entrySize)
+
 			keyByte := make([]byte, keySize)
 			if _, err := fp.ReadAt(keyByte, readOffset); err != nil {
 				continue
 			}
-			if valueSize == 0 {
+			if entry.valueSize == 0 {
 				b.index.del(string(keyByte))
 				//key is deleted
 				continue
 			}
 
-			timestamp := uint64(binary.BigEndian.Uint32(buf[4:8]))
-
 			//load to map
-			entry := newEntry(fid, valueSize, valueOffset, timestamp)
 			b.index.put(string(keyByte), entry)
 		}
 	}
