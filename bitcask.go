@@ -37,6 +37,7 @@ func New(dir string) (*Bitcask, error) {
 		mu:       &sync.RWMutex{},
 	}
 	bitcask.loadIndex()
+	bitcask.merge()
 	return bitcask, nil
 }
 
