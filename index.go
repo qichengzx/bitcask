@@ -2,35 +2,37 @@ package bitcask
 
 import (
 	"errors"
+	"io"
+	"os"
 	"sync"
 )
 
 type index struct {
-	entries map[string]*entry
-	*sync.RWMutex
+	entrys map[string]*entry
+	mu     *sync.RWMutex
 }
 
 var (
-	ErrKeyNotFound = errors.New("Key not found")
+	ErrKeyNotFound = errors.New("key not found")
 )
 
 func newIndex() *index {
 	return &index{
-		entries: make(map[string]*entry),
-		RWMutex: &sync.RWMutex{},
+		entrys: make(map[string]*entry),
+		mu:     &sync.RWMutex{},
 	}
 }
 
 func (i *index) put(key string, entry *entry) {
-	i.Lock()
-	defer i.Unlock()
-	i.entries[key] = entry
+	i.mu.Lock()
+	i.entrys[key] = entry
+	i.mu.Unlock()
 }
 
 func (i *index) get(key []byte) (*entry, error) {
-	i.Lock()
-	defer i.Unlock()
-	if entry, ok := i.entries[string(key)]; ok {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+	if entry, ok := i.entrys[string(key)]; ok {
 		return entry, nil
 	}
 
@@ -38,7 +40,23 @@ func (i *index) get(key []byte) (*entry, error) {
 }
 
 func (i *index) del(key string) {
-	i.Lock()
-	defer i.Unlock()
-	delete(i.entries, key)
+	i.mu.Lock()
+	delete(i.entrys, key)
+	i.mu.Unlock()
+}
+
+func (i *index) buildFromHint(fid uint32, hintFp *os.File) {
+	var offset int64 = 0
+	for {
+		header, err := decodeHintData(hintFp, offset)
+		if err != nil && err == io.EOF {
+			//TODO
+			break
+		}
+
+		entry := newEntry(fid, header.ksize, header.vsize, uint64(header.valueOffset), header.timestamp)
+		i.put(string(header.key), entry)
+
+		offset += int64(header.ksize) + int64(HintHeaderSize)
+	}
 }

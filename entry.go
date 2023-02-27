@@ -7,16 +7,19 @@ import (
 
 type entry struct {
 	fileID      uint32
+	keySize     uint32
 	valueSize   uint32
 	valueOffset uint64
 	timestamp   uint64
+	key         []byte
 }
 
 const HeaderSize = 16
 
-func newEntry(fid, valueSize uint32, valueOffset, timestamp uint64) *entry {
+func newEntry(fid, keySize, valueSize uint32, valueOffset, timestamp uint64) *entry {
 	return &entry{
 		fileID:      fid,
+		keySize:     keySize,
 		valueSize:   valueSize,
 		valueOffset: valueOffset,
 		timestamp:   timestamp,
@@ -25,11 +28,11 @@ func newEntry(fid, valueSize uint32, valueOffset, timestamp uint64) *entry {
 
 func encode(key, value []byte, keySize, valueSize, ts, entrySize uint32) ([]byte, error) {
 	// crc32 | timestamp | keySize | valueSize | key | value
-	// 4	 | 4		 | 4	   | 4         | 4   | 4
+	// 4	 | 4		 | 4	   | 4 		   | 4   | 4
 	buf := make([]byte, entrySize)
 	binary.BigEndian.PutUint32(buf[4:8], ts)
 	binary.BigEndian.PutUint32(buf[8:12], keySize)
-	binary.BigEndian.PutUint32(buf[12:16], valueSize)
+	binary.BigEndian.PutUint32(buf[12:HeaderSize], valueSize)
 	copy(buf[HeaderSize:HeaderSize+keySize], key)
 	copy(buf[HeaderSize+keySize:HeaderSize+keySize+valueSize], value)
 
