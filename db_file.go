@@ -37,15 +37,18 @@ func (bf *BitFile) populateFilesMap(dir string) (uint32, error) {
 		return 0, err
 	}
 
-	found := make(map[uint32]struct{})
-	var maxFid uint32 = 0
+	var (
+		found         = make(map[uint32]struct{}, len(files))
+		maxFid uint32 = 0
+	)
+
 	for _, file := range files {
 		fid, err := getFid(file.Name())
 		if err != nil {
 			return 0, err
 		}
 		if _, ok := found[fid]; ok {
-			return 0, errors.New("Duplicate file found.")
+			return 0, errors.New("duplicate file found")
 		}
 		found[fid] = struct{}{}
 		if maxFid < fid {
@@ -65,14 +68,14 @@ func (bf *BitFile) write(key, value []byte) (*entry, error) {
 
 	offset := bf.offset + uint64(HeaderSize+keySize)
 
-	_, err := bf.fp.WriteAt(buf, int64(bf.offset))
+	n, err := bf.fp.Write(buf)
 	if err != nil {
 		return nil, err
 	}
 
-	bf.offset += uint64(entrySize)
+	bf.offset += uint64(n)
 
-	entry := newEntry(bf.fid, valueSize, offset, uint64(ts))
+	entry := newEntry(bf.fid, keySize, valueSize, offset, uint64(ts))
 	return entry, nil
 }
 
@@ -108,7 +111,8 @@ func (bf *BitFile) openFile(dir string) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	fp, err := os.OpenFile(file, os.O_CREATE|os.O_RDWR, 0644)
+
+	fp, err := os.OpenFile(file, os.O_RDWR|os.O_APPEND|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, err
 	}
@@ -132,6 +136,10 @@ func (bf *BitFile) newFile(dir string) (string, error) {
 
 func (bf *BitFile) newFid() string {
 	return fmt.Sprintf("%06d", bf.fid)
+}
+
+func (bf *BitFile) newEntryFromBuf(offset int64) (*entry, uint32) {
+	return newEntryFromBuf(bf.fp, bf.fid, offset)
 }
 
 func read(fp *os.File, offset int64, size uint32) ([]byte, error) {
@@ -161,7 +169,7 @@ func getFid(name string) (uint32, error) {
 	fsz := len(name)
 	fid, err := strconv.ParseUint(name[:fsz-5], 10, 32)
 	if err != nil {
-		return 0, errors.New("Unable to parse file id.")
+		return 0, errors.New("unable to parse file id")
 	}
 
 	return uint32(fid), nil
@@ -170,7 +178,7 @@ func getFid(name string) (uint32, error) {
 func scanOldFiles(dir string) ([]os.DirEntry, error) {
 	files, err := os.ReadDir(dir)
 	if err != nil {
-		return nil, errors.New("Unable to open dir.")
+		return nil, errors.New("unable to open dir")
 	}
 	var entry []os.DirEntry
 	for _, file := range files {
@@ -208,19 +216,14 @@ func (bf *BitFiles) add(fid uint32, fp *BitFile) {
 }
 
 const (
-	lockFileName = "bitcask.lock"
 	mergeFileExt = ".merge"
 )
 
-func lock(dir string) (*os.File, error) {
-	return os.OpenFile(filepath.Join(dir, lockFileName), os.O_EXCL|os.O_CREATE|os.O_RDWR, os.ModePerm)
-}
-
-func newEntryFromBuf(fp *os.File, fid uint32, offset int64) (*entry, uint32, uint32) {
+func newEntryFromBuf(fp *os.File, fid uint32, offset int64) (*entry, uint32) {
 	buf, err := read(fp, offset, HeaderSize)
 	if err != nil {
 		if err == io.EOF {
-			return nil, 0, 0
+			return nil, 0
 		}
 	}
 	ts := binary.BigEndian.Uint32(buf[4:8])
@@ -228,9 +231,15 @@ func newEntryFromBuf(fp *os.File, fid uint32, offset int64) (*entry, uint32, uin
 	valueSize := binary.BigEndian.Uint32(buf[12:HeaderSize])
 
 	entrySize := getSize(keySize, valueSize)
+	keyByte := make([]byte, keySize)
+	if _, err := fp.ReadAt(keyByte, offset+HeaderSize); err != nil {
+		return nil, 0
+	}
 
-	entry := newEntry(fid, valueSize, uint64(offset)+uint64(HeaderSize+keySize), uint64(ts))
-	return entry, keySize, entrySize
+	entry := newEntry(fid, keySize, valueSize, uint64(offset)+uint64(HeaderSize+keySize), uint64(ts))
+	entry.key = keyByte
+
+	return entry, entrySize
 }
 
 func newMergeFileName(dir string, fid uint32) string {
@@ -284,30 +293,30 @@ func (b *Bitcask) merge() {
 			mergeOffset int64 = 0
 		)
 		for {
-			entry, keySize, entrySize := newEntryFromBuf(fp, fid, offset)
+			entry, entrySize := newEntryFromBuf(fp, fid, offset)
 			if entry == nil {
 				break
 			}
 
 			readOffset := offset + HeaderSize
 			offset += int64(entrySize)
-			keyByte, err := read(fp, readOffset, keySize)
+			keyByte, err := read(fp, readOffset, entry.keySize)
 			if err != nil {
 				continue
 			}
 
 			//check if the key was deleted
-			e, err := b.index.get(keyByte)
+			e, _ := b.index.get(keyByte)
 			if e == nil || entry.valueSize == 0 {
 				b.index.del(string(keyByte))
 				continue
 			}
-			valByte, err := read(fp, readOffset+int64(keySize), entry.valueSize)
+			valByte, err := read(fp, readOffset+int64(entry.keySize), entry.valueSize)
 			if err != nil {
 				continue
 			}
 
-			buf, _ := encode(keyByte, valByte, keySize, entry.valueSize, uint32(entry.timestamp), entrySize)
+			buf, _ := encode(keyByte, valByte, entry.keySize, entry.valueSize, uint32(entry.timestamp), entrySize)
 			_, err = mergeFp.WriteAt(buf, mergeOffset)
 			mergeOffset += int64(entrySize)
 			if err != nil {
