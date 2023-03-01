@@ -2,15 +2,18 @@ package bitcask
 
 import (
 	"errors"
+	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 type Bitcask struct {
 	option   Option
 	index    *index
-	lock     *os.File
+	lock     *FileLock
 	oldFiles *BitFiles
 	actFile  *BitFile
 	mu       *sync.RWMutex
@@ -21,7 +24,7 @@ func New(dir string) (*Bitcask, error) {
 	if err != nil {
 		return nil, err
 	}
-	lockFile, err := lock(dir)
+	fileLock, err := AcquireFileLock(dir, false)
 	if err != nil {
 		return nil, err
 	}
@@ -31,7 +34,7 @@ func New(dir string) (*Bitcask, error) {
 	bitcask := &Bitcask{
 		option:   options,
 		index:    newIndex(),
-		lock:     lockFile,
+		lock:     fileLock,
 		oldFiles: newBitFiles(),
 		actFile:  bf,
 		mu:       &sync.RWMutex{},
@@ -43,11 +46,13 @@ func New(dir string) (*Bitcask, error) {
 
 func (b *Bitcask) Close() {
 	b.actFile.fp.Close()
-	b.lock.Close()
-	os.Remove(b.lock.Name())
+	b.lock.Release()
 }
 
 func (b *Bitcask) loadIndex() {
+	log.Println("Start load old files.")
+	t1 := time.Now()
+
 	files, err := scanOldFiles(b.option.Dir)
 	if err != nil {
 		panic(err)
@@ -56,40 +61,47 @@ func (b *Bitcask) loadIndex() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for _, file := range files {
-		fid, _ := getFid(file.Name())
-		fp, err := os.Open(filepath.Join(b.option.Dir, file.Name()))
-
-		bitFile, err := toBitFile(fid, fp)
-		if err != nil {
+		if filepath.Base(b.actFile.fp.Name()) == file.Name() { //skip active file
 			continue
 		}
+		fid, _ := getFid(file.Name())
+		fmt.Println(file.Name(), fid)
 		var offset int64 = 0
-		b.oldFiles.add(fid, bitFile)
-		for {
-			entry, keySize, entrySize := newEntryFromBuf(fp, fid, offset)
-			if entry == nil {
-				break
-			}
 
-			readOffset := offset + HeaderSize
-			offset += int64(entrySize)
+		hintFp, err := openHintFile(b.option.Dir, fid)
+		if err == nil && hintFp != nil {
+			b.index.buildFromHint(fid, hintFp)
+		} else {
+			fp, _ := os.Open(filepath.Join(b.option.Dir, file.Name()))
 
-			keyByte := make([]byte, keySize)
-			if _, err := fp.ReadAt(keyByte, readOffset); err != nil {
-				continue
-			}
-			if entry.valueSize == 0 {
-				b.index.del(string(keyByte))
-				//key is deleted
+			bitFile, err := toBitFile(fid, fp)
+			if err != nil {
 				continue
 			}
 
-			//load to map
-			b.index.put(string(keyByte), entry)
+			hintfp, _ := newHintFile(b.option.Dir, fid)
+			b.oldFiles.add(fid, bitFile)
+			for {
+				entry, entrySize := bitFile.newEntryFromBuf(offset)
+				if entry == nil {
+					break
+				}
+				offset += int64(entrySize)
+
+				if entry.valueSize == 0 {
+					b.index.del(string(entry.key))
+					//key was deleted
+					continue
+				}
+
+				//load to map
+				b.index.put(string(entry.key), entry)
+				putHint(hintfp, entry.key, uint32(len(entry.key)), uint32(entry.valueSize), uint32(offset))
+			}
 		}
 	}
+	log.Println("load old file use:", time.Since(t1).String())
 }
-
 func (b *Bitcask) Put(key, value []byte) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
