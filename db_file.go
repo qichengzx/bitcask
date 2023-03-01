@@ -64,7 +64,7 @@ func (bf *BitFile) write(key, value []byte) (*entry, error) {
 	keySize := uint32(len(key))
 	valueSize := uint32(len(value))
 	entrySize := getSize(keySize, valueSize)
-	buf, _ := encode(key, value, keySize, valueSize, ts, entrySize)
+	buf, _ := encodeEntry(key, value, keySize, valueSize, ts, entrySize)
 
 	offset := bf.offset + uint64(HeaderSize+keySize)
 
@@ -88,7 +88,7 @@ func (bf *BitFile) del(key []byte) error {
 	keySize := uint32(len(key))
 	var valueSize uint32 = 0
 	entrySize := getSize(keySize, valueSize)
-	buf, _ := encode(key, nil, keySize, valueSize, ts, entrySize)
+	buf, _ := encodeEntry(key, nil, keySize, valueSize, ts, entrySize)
 
 	_, err := bf.fp.WriteAt(buf, int64(bf.offset))
 	if err != nil {
@@ -316,7 +316,7 @@ func (b *Bitcask) merge() {
 				continue
 			}
 
-			buf, _ := encode(keyByte, valByte, entry.keySize, entry.valueSize, uint32(entry.timestamp), entrySize)
+			buf, _ := encodeEntry(keyByte, valByte, entry.keySize, entry.valueSize, uint32(entry.timestamp), entrySize)
 			_, err = mergeFp.WriteAt(buf, mergeOffset)
 			mergeOffset += int64(entrySize)
 			if err != nil {
