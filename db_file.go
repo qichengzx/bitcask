@@ -138,7 +138,7 @@ func (bf *BitFile) newFid() string {
 	return fmt.Sprintf("%06d", bf.fid)
 }
 
-func (bf *BitFile) newEntryFromBuf(offset int64) (*entry, uint32) {
+func (bf *BitFile) newEntryFromBuf(offset int64) (*entry, uint32, []byte) {
 	return newEntryFromBuf(bf.fp, bf.fid, offset)
 }
 
@@ -219,11 +219,11 @@ const (
 	mergeFileExt = ".merge"
 )
 
-func newEntryFromBuf(fp *os.File, fid uint32, offset int64) (*entry, uint32) {
+func newEntryFromBuf(fp *os.File, fid uint32, offset int64) (*entry, uint32, []byte) {
 	buf, err := read(fp, offset, HeaderSize)
 	if err != nil {
 		if err == io.EOF {
-			return nil, 0
+			return nil, 0, nil
 		}
 	}
 	ts := binary.BigEndian.Uint32(buf[4:8])
@@ -233,13 +233,13 @@ func newEntryFromBuf(fp *os.File, fid uint32, offset int64) (*entry, uint32) {
 	entrySize := getSize(keySize, valueSize)
 	keyByte := make([]byte, keySize)
 	if _, err := fp.ReadAt(keyByte, offset+HeaderSize); err != nil {
-		return nil, 0
+		return nil, 0, nil
 	}
 
 	entry := newEntry(fid, keySize, valueSize, uint64(offset)+uint64(HeaderSize+keySize), uint64(ts))
 	entry.key = keyByte
 
-	return entry, entrySize
+	return entry, entrySize, keyByte
 }
 
 func newMergeFileName(dir string, fid uint32) string {
