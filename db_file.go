@@ -293,7 +293,7 @@ func (b *Bitcask) merge() {
 			mergeOffset int64 = 0
 		)
 		for {
-			entry, entrySize := newEntryFromBuf(fp, fid, offset)
+			entry, entrySize, _ := newEntryFromBuf(fp, fid, offset)
 			if entry == nil {
 				break
 			}
