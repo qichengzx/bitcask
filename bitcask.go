@@ -102,7 +102,7 @@ func (b *Bitcask) buildFromData(bfile *BitFile, fp *os.File) {
 
 		//load to index
 		b.index.put(string(key), entry)
-		putHint(fp, key, uint32(len(key)), uint32(entry.valueSize), uint32(offset))
+		putHint(fp, key, uint32(len(key)), uint32(entry.valueSize), uint32(entry.valueOffset))
 	}
 }
 
